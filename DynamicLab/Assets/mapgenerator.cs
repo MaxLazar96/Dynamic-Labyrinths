@@ -15,8 +15,20 @@ public partial class MapGenerator : MonoBehaviour
     public bool randomlySelectMapType = true; // NEW: Toggle to allow random selection
     public MapType currentMapType = MapType.Maze_ARA;
 
+    // ==========================================
+    // --- NEW: Biome Settings ---
+    // ==========================================
+    [Header("Biome Settings")]
+    public BiomeData randomScatterBiome;
+    public BiomeData mazeARABiome;
+    public BiomeData cavernsLPABiome;
+    public BiomeData arenaDLiteBiome;
+    
+    private BiomeData currentBiome;
+    // ==========================================
+
     [Header("Basic Settings")]
-    public GameObject wallPrefab;
+    public GameObject wallPrefab; // משמש כגיבוי למקרה שאין Biome
     public int mapSize = 100;
     [Range(0, 100)]
     public int obstacleDensity = 10;
@@ -51,7 +63,7 @@ public partial class MapGenerator : MonoBehaviour
         Random.InitState(currentSeed);
         Debug.Log("Current Map Seed: " + currentSeed);
 
-        // --- NEW: Random Map Selection Logic ---
+        // --- Random Map Selection Logic ---
         if (randomlySelectMapType)
         {
             // Random.Range(1, 4) picks an integer: 1, 2, or 3. 
@@ -60,9 +72,21 @@ public partial class MapGenerator : MonoBehaviour
             currentMapType = (MapType)Random.Range(1, 4);
             Debug.Log("Randomly Selected Map Type: " + currentMapType);
         }
-        // ---------------------------------------
+
+        // ==========================================
+        // --- NEW: Assign Current Biome ---
+        // ==========================================
+        switch (currentMapType)
+        {
+            case MapType.RandomScatter: currentBiome = randomScatterBiome; break;
+            case MapType.Maze_ARA: currentBiome = mazeARABiome; break;
+            case MapType.Caverns_LPA: currentBiome = cavernsLPABiome; break;
+            case MapType.Arena_DLite: currentBiome = arenaDLiteBiome; break;
+        }
+        // ==========================================
 
         GenerateMap();
+        ApplyAtmosphere(); // <-- תוספת: קריאה לפונקציית מזג האוויר והתאורה
         SetStartAndEnd();
         SpawnPuzzles();
 
@@ -108,17 +132,58 @@ public partial class MapGenerator : MonoBehaviour
             grid[mapSize - 1, i] = true;
         }
 
-        // 3. Instantiate physical walls
+        // ==========================================
+        // --- NEW: Instantiate Weather System ---
+        // ==========================================
+        if (currentBiome != null && currentBiome.weatherSystemPrefab != null)
+        {
+            Instantiate(currentBiome.weatherSystemPrefab, Vector3.zero, Quaternion.identity, transform);
+        }
+
+        // 3. Instantiate physical walls AND FLOORS
         float offset = mapSize / 2f;
         for (int x = 0; x < mapSize; x++)
         {
             for (int z = 0; z < mapSize; z++)
             {
+                // הגדרת מיקומים לרצפה ומכשול
+                Vector3 floorPos = new Vector3(x - offset + 0.5f, 0f, z - offset + 0.5f);
+                Vector3 obstaclePos = new Vector3(x - offset + 0.5f, 0f, z - offset + 0.5f);
+
+                // רינדור הרצפה בכל משבצת
+                if (currentBiome != null && currentBiome.floorPrefabs != null && currentBiome.floorPrefabs.Length > 0)
+                {
+                    GameObject floorChoice = currentBiome.floorPrefabs[Random.Range(0, currentBiome.floorPrefabs.Length)];
+                    Instantiate(floorChoice, floorPos, Quaternion.identity, transform);
+                }
+
+                // רינדור מכשול רק אם במטריצה מוגדר קיר (true)
                 if (grid[x, z])
                 {
-                    Vector3 spawnPos = new Vector3(x - offset + 0.5f, 1f, z - offset + 0.5f);
-                    Instantiate(wallPrefab, spawnPos, Quaternion.identity, transform);
+                    if (currentBiome != null && currentBiome.obstaclePrefabs != null && currentBiome.obstaclePrefabs.Length > 0)
+                    {
+                        GameObject obstacleChoice = currentBiome.obstaclePrefabs[Random.Range(0, currentBiome.obstaclePrefabs.Length)];
+                        Instantiate(obstacleChoice, obstaclePos, Quaternion.identity, transform);
+                    }
+                    else
+                    {
+                        // חלופה למקרה שהביום ריק
+                        Instantiate(wallPrefab, obstaclePos, Quaternion.identity, transform);
+                    }
                 }
+                // --- רינדור קישוטים איפה שאין קיר ---
+                else 
+                {
+                    if (currentBiome != null && currentBiome.decorationPrefabs != null && currentBiome.decorationPrefabs.Length > 0)
+                    {
+                        if (Random.Range(0, 100) < currentBiome.decorationChance)
+                        {
+                            GameObject decoChoice = currentBiome.decorationPrefabs[Random.Range(0, currentBiome.decorationPrefabs.Length)];
+                            Instantiate(decoChoice, obstaclePos, Quaternion.identity, transform);
+                        }
+                    }
+                }
+                // ---------------------------------------------
             }
         }
     }
@@ -129,7 +194,6 @@ public partial class MapGenerator : MonoBehaviour
 
     void GenerateRandomScatter()
     {
-        // Your original generation logic
         for (int x = 1; x < mapSize - 1; x++)
         {
             for (int z = 1; z < mapSize - 1; z++)
@@ -151,7 +215,6 @@ public partial class MapGenerator : MonoBehaviour
 
     void GenerateMazeARA()
     {
-        // Fills map with walls, then carves a perfect maze using a simple drunkard's walk / recursive backtracker
         for (int x = 0; x < mapSize; x++)
             for (int z = 0; z < mapSize; z++)
                 grid[x, z] = true; 
@@ -184,21 +247,31 @@ public partial class MapGenerator : MonoBehaviour
                 stack.Push(current);
                 Vector2Int chosenDir = unvisitedNeighbors[Random.Range(0, unvisitedNeighbors.Count)];
                 
-                // Carve path
-                grid[current.x + chosenDir.x, current.y + chosenDir.y] = false; // Carve through wall
-                grid[current.x + chosenDir.x * 2, current.y + chosenDir.y * 2] = false; // Carve into next cell
+                grid[current.x + chosenDir.x, current.y + chosenDir.y] = false; 
+                grid[current.x + chosenDir.x * 2, current.y + chosenDir.y * 2] = false; 
                 
                 stack.Push(new Vector2Int(current.x + chosenDir.x * 2, current.y + chosenDir.y * 2));
             }
+        }
+
+        // ==========================================
+        // --- NEW: Wall breaking for ARA* and wider paths ---
+        // ==========================================
+        int wallsToBreak = (mapSize * mapSize) / 7; // מסיר בערך 14% מהקירות
+        
+        for (int i = 0; i < wallsToBreak; i++)
+        {
+            int randomX = Random.Range(1, mapSize - 1);
+            int randomZ = Random.Range(1, mapSize - 1);
+            
+            grid[randomX, randomZ] = false; // הופך קיר לשטח הליכה פתוח
         }
     }
 
     void GenerateCavernsLPA()
     {
-        // Cellular Automata: Organic caves ideal for dynamic obstacle injection later
         int fillPercent = 45;
 
-        // Initial noise
         for (int x = 1; x < mapSize - 1; x++)
         {
             for (int z = 1; z < mapSize - 1; z++)
@@ -207,7 +280,6 @@ public partial class MapGenerator : MonoBehaviour
             }
         }
 
-        // Smoothing passes
         for (int i = 0; i < 5; i++)
         {
             bool[,] newGrid = (bool[,])grid.Clone();
@@ -226,11 +298,9 @@ public partial class MapGenerator : MonoBehaviour
 
     void GenerateArenaDLite()
     {
-        // Perlin Noise: Open arena with sparse cover, great for Builder dropping new walls
-        float scale = 0.1f; // Higher scale = smaller noise clusters
-        float threshold = 0.65f; // Higher threshold = fewer walls
+        float scale = 0.1f; 
+        float threshold = 0.65f; 
 
-        // Shift the Perlin sample area so random seeds actually change the layout
         float offsetX = Random.Range(0f, 10000f);
         float offsetZ = Random.Range(0f, 10000f);
 
@@ -264,7 +334,7 @@ public partial class MapGenerator : MonoBehaviour
                 }
                 else
                 {
-                    wallCount++; // Encourage walls on the very edge
+                    wallCount++; 
                 }
             }
         }
@@ -367,5 +437,35 @@ public partial class MapGenerator : MonoBehaviour
                 spawnedCount++;
             }
         }
+    }
+
+    // ==========================================
+    // --- NEW: ATMOSPHERE & LIGHTING ---
+    // ==========================================
+    void ApplyAtmosphere()
+    {
+        if (currentBiome == null) return;
+
+        // 1. שינוי השמיים (Skybox)
+        if (currentBiome.skyboxMaterial != null)
+        {
+            RenderSettings.skybox = currentBiome.skyboxMaterial;
+        }
+
+        // 2. הגדרות ערפל (Fog)
+        RenderSettings.fog = true;
+        RenderSettings.fogColor = currentBiome.fogColor;
+        RenderSettings.fogMode = FogMode.ExponentialSquared;
+        RenderSettings.fogDensity = currentBiome.fogDensity;
+
+        // 3. שינוי אור השמש
+        Light sun = RenderSettings.sun;
+        if (sun != null)
+        {
+            sun.color = currentBiome.sunColor;
+        }
+
+        // רענון התאורה הגלובלית כדי שהשינויים יחולו מיד
+        DynamicGI.UpdateEnvironment();
     }
 }

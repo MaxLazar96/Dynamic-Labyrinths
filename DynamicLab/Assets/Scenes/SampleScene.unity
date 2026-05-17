@@ -780,7 +780,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MapGenerator
   randomlySelectMapType: 0
-  currentMapType: 3
+  currentMapType: 2
+  randomScatterBiome: {fileID: 0}
+  mazeARABiome: {fileID: 11400000, guid: 9fcdd76c5bec74e4bbb45e271c178ddd, type: 2}
+  cavernsLPABiome: {fileID: 11400000, guid: aea1d34084ff7a2469ba5d11d2e3f022, type: 2}
+  arenaDLiteBiome: {fileID: 11400000, guid: 3104c4c1499987642a2426e31078d498, type: 2}
   wallPrefab: {fileID: 6921172326645246790, guid: fb60bbf024b4b7f44b6d22275ba50153, type: 3}
   mapSize: 100
   obstacleDensity: 10
@@ -2147,7 +2151,7 @@ MeshRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1176514082}
-  m_Enabled: 1
+  m_Enabled: 0
   m_CastShadows: 1
   m_ReceiveShadows: 1
   m_DynamicOccludee: 1
