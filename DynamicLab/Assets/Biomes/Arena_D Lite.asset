@@ -23,7 +23,7 @@ MonoBehaviour:
   decorationPrefabs:
   - {fileID: 919132149155446097, guid: adf004b9285686244beb4f9b1aa930b6, type: 3}
   decorationChance: 15
-  skyboxMaterial: {fileID: 0}
+  skyboxMaterial: {fileID: 2100000, guid: 85cf0b004bc4a654b9e501efcce47902, type: 2}
   fogColor: {r: 0, g: 0.13278484, b: 1, a: 1}
   fogDensity: 0.01
   sunColor: {r: 0, g: 0.5696685, b: 0.8039216, a: 1}

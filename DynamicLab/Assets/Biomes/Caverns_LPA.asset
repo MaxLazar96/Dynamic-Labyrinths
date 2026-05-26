@@ -24,7 +24,7 @@ MonoBehaviour:
   - {fileID: 919132149155446097, guid: b247df23e41efe64b8ac904b5772e8d0, type: 3}
   - {fileID: 919132149155446097, guid: 024217747a622dd4b9b24ce5085189d0, type: 3}
   decorationChance: 15
-  skyboxMaterial: {fileID: 0}
+  skyboxMaterial: {fileID: 2100000, guid: e2341a9d03e86ec4290c72b1e22bbc7c, type: 2}
   fogColor: {r: 0, g: 1, b: 0.44944477, a: 1}
   fogDensity: 0.01
   sunColor: {r: 1, g: 0.7090666, b: 0.015686274, a: 1}

@@ -215,17 +215,23 @@ public partial class MapGenerator : MonoBehaviour
 
     void GenerateMazeARA()
     {
-        for (int x = 0; x < mapSize; x++)
-            for (int z = 0; z < mapSize; z++)
-                grid[x, z] = true; 
+        // 1. ניצור מבוך מיניאטורי בחצי מהגודל של המפה המקורית
+        int miniSize = mapSize / 2;
+        bool[,] miniGrid = new bool[miniSize, miniSize];
+
+        // אתחול המבוך המיניאטורי עם קירות
+        for (int x = 0; x < miniSize; x++)
+            for (int z = 0; z < miniSize; z++)
+                miniGrid[x, z] = true; 
 
         Stack<Vector2Int> stack = new Stack<Vector2Int>();
         Vector2Int current = new Vector2Int(1, 1);
-        grid[current.x, current.y] = false;
+        miniGrid[current.x, current.y] = false;
         stack.Push(current);
 
         Vector2Int[] directions = { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
 
+        // 2. יצירת המבוך הבסיסי (Recursive Backtracker) על הגריד המוקטן
         while (stack.Count > 0)
         {
             current = stack.Pop();
@@ -236,7 +242,7 @@ public partial class MapGenerator : MonoBehaviour
                 int nx = current.x + dir.x * 2;
                 int nz = current.y + dir.y * 2;
 
-                if (nx > 0 && nx < mapSize - 1 && nz > 0 && nz < mapSize - 1 && grid[nx, nz])
+                if (nx > 0 && nx < miniSize - 1 && nz > 0 && nz < miniSize - 1 && miniGrid[nx, nz])
                 {
                     unvisitedNeighbors.Add(dir);
                 }
@@ -247,24 +253,43 @@ public partial class MapGenerator : MonoBehaviour
                 stack.Push(current);
                 Vector2Int chosenDir = unvisitedNeighbors[Random.Range(0, unvisitedNeighbors.Count)];
                 
-                grid[current.x + chosenDir.x, current.y + chosenDir.y] = false; 
-                grid[current.x + chosenDir.x * 2, current.y + chosenDir.y * 2] = false; 
+                miniGrid[current.x + chosenDir.x, current.y + chosenDir.y] = false; 
+                miniGrid[current.x + chosenDir.x * 2, current.y + chosenDir.y * 2] = false; 
                 
                 stack.Push(new Vector2Int(current.x + chosenDir.x * 2, current.y + chosenDir.y * 2));
             }
         }
 
-        // ==========================================
-        // --- NEW: Wall breaking for ARA* and wider paths ---
-        // ==========================================
-        int wallsToBreak = (mapSize * mapSize) / 7; // מסיר בערך 14% מהקירות
-        
-        for (int i = 0; i < wallsToBreak; i++)
+        // 3. הרחבה: כל משבצת במבוך המיניאטורי הופכת לבלוק של 2x2 במפה האמיתית
+        for (int x = 0; x < miniSize; x++)
         {
-            int randomX = Random.Range(1, mapSize - 1);
-            int randomZ = Random.Range(1, mapSize - 1);
+            for (int z = 0; z < miniSize; z++)
+            {
+                bool isWall = miniGrid[x, z];
+                
+                // מיפוי לגריד המקורי (הכפלה ב-2)
+                grid[x * 2, z * 2] = isWall;
+                grid[x * 2 + 1, z * 2] = isWall;
+                grid[x * 2, z * 2 + 1] = isWall;
+                grid[x * 2 + 1, z * 2 + 1] = isWall;
+            }
+        }
+
+        // 4. דילול המבוך ליצירת מסלולים נוספים (Loops) - מותאם למעברים כפולים
+        // אנחנו שוברים גושים של 2x2 כדי לא ליצור "חורים" צרים של קובייה בודדת
+        int chunksToBreak = (mapSize * mapSize) / 40; 
+        
+        for (int i = 0; i < chunksToBreak; i++)
+        {
+            // בוחרים קואורדינטות זוגיות כדי לשמור על האחידות של הבלוקים
+            int randomX = Random.Range(1, miniSize - 1) * 2;
+            int randomZ = Random.Range(1, miniSize - 1) * 2;
             
-            grid[randomX, randomZ] = false; // הופך קיר לשטח הליכה פתוח
+            // שוברים בלוק של 2x2 קירות כדי לפתוח מעבר רחב נוסף
+            grid[randomX, randomZ] = false; 
+            grid[randomX + 1, randomZ] = false;
+            grid[randomX, randomZ + 1] = false;
+            grid[randomX + 1, randomZ + 1] = false;
         }
     }
 
