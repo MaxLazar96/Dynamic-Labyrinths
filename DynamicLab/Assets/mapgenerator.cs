@@ -11,12 +11,15 @@ public partial class MapGenerator : MonoBehaviour
         Arena_DLite     // 3: Open areas with clustered cover (Perlin Noise)
     }
 
+    [Header("Mode Settings")]
+    public bool isMainMenu = false; // <-- NEW: Toggle this ON only in the MainMenu scene
+
     [Header("Generation Style")]
-    public bool randomlySelectMapType = true; // NEW: Toggle to allow random selection
+    public bool randomlySelectMapType = true; // Toggle to allow random selection
     public MapType currentMapType = MapType.Maze_ARA;
 
     // ==========================================
-    // --- NEW: Biome Settings ---
+    // --- Biome Settings ---
     // ==========================================
     [Header("Biome Settings")]
     public BiomeData randomScatterBiome;
@@ -74,7 +77,7 @@ public partial class MapGenerator : MonoBehaviour
         }
 
         // ==========================================
-        // --- NEW: Assign Current Biome ---
+        // --- Assign Current Biome ---
         // ==========================================
         switch (currentMapType)
         {
@@ -86,19 +89,26 @@ public partial class MapGenerator : MonoBehaviour
         // ==========================================
 
         GenerateMap();
-        ApplyAtmosphere(); // <-- תוספת: קריאה לפונקציית מזג האוויר והתאורה
-        SetStartAndEnd();
-        SpawnPuzzles();
+        ApplyAtmosphere(); // קריאה לפונקציית מזג האוויר והתאורה
 
-        PathfindingGrid pg = FindFirstObjectByType<PathfindingGrid>();
-        if (pg != null)
+        // ==========================================
+        // --- NEW: ONLY SPAWN GAMEPLAY ELEMENTS IF NOT IN MENU ---
+        // ==========================================
+        if (!isMainMenu)
         {
-            pg.CreateGrid();
-            SpawnBots(pg);
-        }
-        else
-        {
-            Debug.LogError("MapGenerator: PathfindingGrid script not found! Cannot spawn bots.");
+            SetStartAndEnd();
+            SpawnPuzzles();
+
+            PathfindingGrid pg = FindFirstObjectByType<PathfindingGrid>();
+            if (pg != null)
+            {
+                pg.CreateGrid();
+                SpawnBots(pg);
+            }
+            else
+            {
+                Debug.LogError("MapGenerator: PathfindingGrid script not found! Cannot spawn bots.");
+            }
         }
     }
 
@@ -133,7 +143,7 @@ public partial class MapGenerator : MonoBehaviour
         }
 
         // ==========================================
-        // --- NEW: Instantiate Weather System ---
+        // --- Instantiate Weather System ---
         // ==========================================
         if (currentBiome != null && currentBiome.weatherSystemPrefab != null)
         {
@@ -465,7 +475,7 @@ public partial class MapGenerator : MonoBehaviour
     }
 
     // ==========================================
-    // --- NEW: ATMOSPHERE & LIGHTING ---
+    // --- ATMOSPHERE & LIGHTING ---
     // ==========================================
     void ApplyAtmosphere()
     {
