@@ -8,17 +8,24 @@ public class LevelManager : MonoBehaviour
 {
     public static LevelManager instance;
 
+    [Header("Cameras")]
+    public Camera mainCamera; // Kept just the main camera
+
     [Header("In-Game UI")]
     public TextMeshProUGUI scoreText;
-    public GameObject algorithmWindow; 
-    public GameObject pauseMenuWindow; // <-- NEW
+    public TextMeshProUGUI algorithmHintText; 
+    public GameObject pauseMenuWindow; 
 
     [Header("End Game UI")]
     public GameObject levelEndWindow; 
-    public TextMeshProUGUI runStatsText; // <-- NEW: Replaces basic text
+    public TextMeshProUGUI runStatsText; 
 
     [Header("Pathfinding Visuals")]
-    public LineRenderer pathRenderer; 
+    public GameObject pathNodePrefab; 
+    public int pathHintLength = 15;
+    public int puzzlesRequiredForHint = 5; 
+    private int puzzlesTowardsNextHint = 0; 
+    private List<GameObject> activeBreadcrumbs = new List<GameObject>(); 
 
     [Header("Player & Destination")]
     public GameObject player;      
@@ -29,16 +36,15 @@ public class LevelManager : MonoBehaviour
     public static bool shouldReplaySameSeed = false;
 
     private int collectedPuzzles = 0;
-    private Coroutine pathVisibilityCoroutine;
+    private bool isPaused = false; 
+    private string usedAlgorithm = "None"; 
     
-    private bool isPaused = false; // <-- NEW
-    private string usedAlgorithm = "None"; // <-- NEW: Tracks what they chose
+    private bool isHintSystemActive = false; 
 
     void Awake()
     {
         if (instance == null) instance = this;
 
-        // Seed logic moved to Awake so MapGenerator gets it in time!
         MapGenerator generator = FindFirstObjectByType<MapGenerator>();
         if (generator != null)
         {
@@ -57,28 +63,22 @@ public class LevelManager : MonoBehaviour
     void Start()
     {
         collectedPuzzles = 0;
+        puzzlesTowardsNextHint = 0;
+        isHintSystemActive = false;
         UpdateScoreUI();
         
-        // Hide all overlay screens
         if (levelEndWindow != null) levelEndWindow.SetActive(false);
-        if (algorithmWindow != null) algorithmWindow.SetActive(false);
         if (pauseMenuWindow != null) pauseMenuWindow.SetActive(false);
-        
-        if (pathRenderer != null) pathRenderer.enabled = false;
+        if (algorithmHintText != null) algorithmHintText.text = ""; 
 
-        ResumeGame(); // Ensures time scale and cursor are correct
+        ResumeGame(); 
     }
 
-    // ==========================================
-    // --- NEW: PAUSE MENU LOGIC ---
-    // ==========================================
     void Update()
     {
-        // Toggle pause menu with Escape key
         if (Input.GetKeyDown(KeyCode.Escape))
         {
-            // Don't pause if the player is already in the end-game or algorithm menus
-            if (levelEndWindow.activeSelf || algorithmWindow.activeSelf) return;
+            if (levelEndWindow.activeSelf) return;
 
             if (isPaused) ResumeGame();
             else PauseGame();
@@ -99,19 +99,15 @@ public class LevelManager : MonoBehaviour
         isPaused = false;
         if (pauseMenuWindow != null) pauseMenuWindow.SetActive(false);
         Time.timeScale = 1f;
-        
-        // --- CHANGED: Now the mouse stays visible and unlocked during gameplay! ---
         Cursor.lockState = CursorLockMode.None; 
         Cursor.visible = true; 
-        // --------------------------------------------------------------------------
     }
 
     public void ReturnToMainMenu()
     {
         Time.timeScale = 1f;
-        SceneManager.LoadScene(0); // Loads the Main Menu
+        SceneManager.LoadScene(0); 
     }
-    // ==========================================
 
     void OnTriggerEnter(Collider other)
     {
@@ -126,11 +122,16 @@ public class LevelManager : MonoBehaviour
     public void CollectPuzzle()
     {
         collectedPuzzles++;
+        puzzlesTowardsNextHint++;
         UpdateScoreUI();
 
-        if (collectedPuzzles == 5)
+        if (puzzlesTowardsNextHint >= puzzlesRequiredForHint)
         {
-            OpenAlgorithmMenu();
+            if (!isHintSystemActive)
+            {
+                puzzlesTowardsNextHint -= puzzlesRequiredForHint; 
+                StartCoroutine(HintSequence());
+            }
         }
     }
 
@@ -139,132 +140,141 @@ public class LevelManager : MonoBehaviour
         if (scoreText != null) scoreText.text = "Puzzles: " + collectedPuzzles;
     }
 
-    void OpenAlgorithmMenu()
+    // ==========================================
+    // --- PATHFINDING LOGIC ---
+    // ==========================================
+    List<Node> CalculateAlgorithmPath(Vector3 startPos, Vector3 endPos)
     {
-        if (algorithmWindow != null) algorithmWindow.SetActive(true);
-        Time.timeScale = 0f; 
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
+        MapGenerator generator = FindFirstObjectByType<MapGenerator>();
+        if (generator == null) return null;
+
+        List<Node> path = null;
+        switch (generator.currentMapType)
+        {
+            case MapGenerator.MapType.Maze_ARA:
+                usedAlgorithm = "ARA*";
+                ARAStarPathfinder ara = FindFirstObjectByType<ARAStarPathfinder>();
+                if (ara != null) path = ara.FindPath(startPos, endPos);
+                break;
+                
+            case MapGenerator.MapType.Caverns_LPA:
+                usedAlgorithm = "LPA*";
+                LPAStarPathfinder lpa = FindFirstObjectByType<LPAStarPathfinder>();
+                if (lpa != null) path = lpa.FindPath(startPos, endPos);
+                break;
+
+            case MapGenerator.MapType.Arena_DLite:
+            case MapGenerator.MapType.RandomScatter:
+                usedAlgorithm = "D* Lite";
+                DStarLitePathfinder dlite = FindFirstObjectByType<DStarLitePathfinder>();
+                if (dlite != null) path = dlite.FindPath(startPos, endPos);
+                break;
+        }
+        return path;
+    }
+
+    string GetAlgorithmExplanation()
+    {
+        if (usedAlgorithm == "ARA*") return "<b>ARA* Active:</b> Prioritizing survival! Fast, sub-optimal path generated.";
+        if (usedAlgorithm == "LPA*") return "<b>LPA* Active:</b> Monitoring environment! Reusing previous calculations.";
+        return "<b>D* Lite Active:</b> Planning backwards! Patching route dynamically.";
     }
 
     // ==========================================
-    // ALGORITHM SELECTION BUTTONS
+    // --- DYNAMIC HINT PULSE SEQUENCE ---
     // ==========================================
-
-    public void SelectARAStar() 
-    { 
-        usedAlgorithm = "ARA*"; // Track selection
-        ARAStarPathfinder pathfinder = FindFirstObjectByType<ARAStarPathfinder>();
+    IEnumerator HintSequence()
+    {
+        isHintSystemActive = true;
         
-        if (pathfinder != null && player != null && destination != null)
+        List<Node> path1 = CalculateAlgorithmPath(player.transform.position, destination.transform.position);
+        
+        if (path1 != null && path1.Count > 0)
         {
-            List<Node> path = pathfinder.FindPath(player.transform.position, destination.transform.position);
-            if (path != null && path.Count > 0) DrawPath(path);
-            else DrawFailsafeLine();
+            int nodesToDraw = Mathf.Min(path1.Count, pathHintLength);
+            DrawBreadcrumbs(path1.GetRange(0, nodesToDraw));
         }
-        StartPathfinding(usedAlgorithm); 
+        
+        if (algorithmHintText != null) algorithmHintText.text = GetAlgorithmExplanation();
+        
+        yield return new WaitForSeconds(10f);
+
+        ClearBreadcrumbs();
+        if (algorithmHintText != null) algorithmHintText.text = "<b>Recalculating...</b>"; 
+        
+        yield return new WaitForSeconds(5f);
+
+        List<Node> path2 = CalculateAlgorithmPath(player.transform.position, destination.transform.position);
+        
+        if (path2 != null && path2.Count > 0)
+        {
+            int nodesToDraw = Mathf.Min(path2.Count, pathHintLength);
+            DrawBreadcrumbs(path2.GetRange(0, nodesToDraw));
+        }
+
+        if (algorithmHintText != null) algorithmHintText.text = GetAlgorithmExplanation() + " <color=yellow>(Final Flash)</color>";
+
+        yield return new WaitForSeconds(5f);
+
+        ClearBreadcrumbs();
+        if (algorithmHintText != null) algorithmHintText.text = ""; 
+        isHintSystemActive = false; 
     }
 
-    public void SelectLPAStar() 
-    { 
-        usedAlgorithm = "LPA*";
-        LPAStarPathfinder pathfinder = FindFirstObjectByType<LPAStarPathfinder>();
+    void DrawBreadcrumbs(List<Node> path)
+    {
+        ClearBreadcrumbs(); 
+
+        if (path == null || pathNodePrefab == null) return;
         
-        if (pathfinder != null && player != null && destination != null)
+        for (int i = 1; i < path.Count; i++)
         {
-            List<Node> path = pathfinder.FindPath(player.transform.position, destination.transform.position);
-            if (path != null && path.Count > 0) DrawPath(path);
-            else DrawFailsafeLine();
+            Vector3 spawnPos = path[i].worldPosition + Vector3.up * 1f; 
+            GameObject crumb = Instantiate(pathNodePrefab, spawnPos, Quaternion.identity);
+            activeBreadcrumbs.Add(crumb);
         }
-        StartPathfinding(usedAlgorithm); 
     }
 
-    public void SelectDLite() 
-    { 
-        usedAlgorithm = "D* Lite";
-        DStarLitePathfinder pathfinder = FindFirstObjectByType<DStarLitePathfinder>();
-        
-        if (pathfinder != null && player != null && destination != null)
+    void ClearBreadcrumbs()
+    {
+        foreach (GameObject crumb in activeBreadcrumbs)
         {
-            List<Node> path = pathfinder.FindPath(player.transform.position, destination.transform.position);
-            if (path != null && path.Count > 0) DrawPath(path);
-            else DrawFailsafeLine();
+            if (crumb != null) Destroy(crumb);
         }
-        StartPathfinding(usedAlgorithm); 
+        activeBreadcrumbs.Clear();
     }
 
     // ==========================================
-    // PATH DRAWING & VISUALS
-    // ==========================================
-
-    void DrawFailsafeLine()
-    {
-        if (pathRenderer == null) return;
-        pathRenderer.positionCount = 2;
-        pathRenderer.SetPosition(0, player.transform.position + Vector3.up * 0.5f);
-        pathRenderer.SetPosition(1, destination.transform.position + Vector3.up * 0.5f);
-    }
-
-    void DrawPath(List<Node> path)
-    {
-        if (path == null || pathRenderer == null) return;
-        
-        pathRenderer.positionCount = path.Count;
-        for (int i = 0; i < path.Count; i++)
-        {
-            pathRenderer.SetPosition(i, path[i].worldPosition + Vector3.up * 0.5f);
-        }
-    }
-
-    void StartPathfinding(string algoName)
-    {
-        if (algorithmWindow != null) algorithmWindow.SetActive(false);
-        ResumeGame(); // Unpauses and locks cursor
-
-        Debug.Log("Starting 60-second visualization for: " + algoName);
-        if (pathVisibilityCoroutine != null) StopCoroutine(pathVisibilityCoroutine);
-        pathVisibilityCoroutine = StartCoroutine(ShowPathForDuration(60f));
-    }
-
-    IEnumerator ShowPathForDuration(float duration)
-    {
-        if (pathRenderer != null)
-        {
-            pathRenderer.enabled = true; 
-            yield return new WaitForSecondsRealtime(duration); 
-            pathRenderer.enabled = false;
-        }
-    }
-
-    // ==========================================
-    // --- NEW: END GAME & SCENE MANAGEMENT ---
+    // --- BASIC END LEVEL ---
     // ==========================================
     void EndLevel()
     {
+        isHintSystemActive = false; 
+        ClearBreadcrumbs(); 
+        if (algorithmHintText != null) algorithmHintText.text = ""; 
+
         if (levelEndWindow != null) levelEndWindow.SetActive(true);
-        
-        // Populate the dynamic stats!
         if (runStatsText != null)
         {
-            runStatsText.text = $"Labyrinth Conquered!\n\nPuzzles Collected: {collectedPuzzles}/5\nAssisted By: {usedAlgorithm}";
+            runStatsText.text = $"Labyrinth Conquered!\n\nPuzzles: {collectedPuzzles}\nAlgorithm: {usedAlgorithm}";
         }
 
+        Time.timeScale = 0f;
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
-        Time.timeScale = 0f;
     }
 
     public void ReplayLevel()
     {
         shouldReplaySameSeed = true;
         Time.timeScale = 1f;
-        SceneManager.LoadScene(1); // Explicitly load Gameplay scene
+        SceneManager.LoadScene(1); 
     }
 
     public void NextMap()
     {
         shouldReplaySameSeed = false;
         Time.timeScale = 1f;
-        SceneManager.LoadScene(1); // Explicitly load Gameplay scene
+        SceneManager.LoadScene(1); 
     }
 }
