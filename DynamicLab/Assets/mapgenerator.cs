@@ -12,7 +12,7 @@ public partial class MapGenerator : MonoBehaviour
     }
 
     [Header("Mode Settings")]
-    public bool isMainMenu = false; // <-- NEW: Toggle this ON only in the MainMenu scene
+    public bool isMainMenu = false; // Toggle this ON only in the MainMenu scene
 
     [Header("Generation Style")]
     public bool randomlySelectMapType = true; // Toggle to allow random selection
@@ -56,6 +56,18 @@ public partial class MapGenerator : MonoBehaviour
 
     private bool[,] grid;
 
+    // ==========================================================
+    // --- NEW FOR VISUALIZATION: משתנים ופונקציות גישה לגריד ---
+    // ==========================================================
+    [HideInInspector] public Vector2Int startGridPos;
+    [HideInInspector] public Vector2Int endGridPos;
+
+    public bool[,] GetGrid()
+    {
+        return grid;
+    }
+    // ==========================================================
+
     void Start()
     {
         if (useRandomSeed)
@@ -92,7 +104,7 @@ public partial class MapGenerator : MonoBehaviour
         ApplyAtmosphere(); // קריאה לפונקציית מזג האוויר והתאורה
 
         // ==========================================
-        // --- NEW: ONLY SPAWN GAMEPLAY ELEMENTS IF NOT IN MENU ---
+        // --- ONLY SPAWN GAMEPLAY ELEMENTS IF NOT IN MENU ---
         // ==========================================
         if (!isMainMenu)
         {
@@ -193,7 +205,6 @@ public partial class MapGenerator : MonoBehaviour
                         }
                     }
                 }
-                // ---------------------------------------------
             }
         }
     }
@@ -286,16 +297,13 @@ public partial class MapGenerator : MonoBehaviour
         }
 
         // 4. דילול המבוך ליצירת מסלולים נוספים (Loops) - מותאם למעברים כפולים
-        // אנחנו שוברים גושים של 2x2 כדי לא ליצור "חורים" צרים של קובייה בודדת
         int chunksToBreak = (mapSize * mapSize) / 40; 
         
         for (int i = 0; i < chunksToBreak; i++)
         {
-            // בוחרים קואורדינטות זוגיות כדי לשמור על האחידות של הבלוקים
             int randomX = Random.Range(1, miniSize - 1) * 2;
             int randomZ = Random.Range(1, miniSize - 1) * 2;
             
-            // שוברים בלוק של 2x2 קירות כדי לפתוח מעבר רחב נוסף
             grid[randomX, randomZ] = false; 
             grid[randomX + 1, randomZ] = false;
             grid[randomX, randomZ + 1] = false;
@@ -408,6 +416,10 @@ public partial class MapGenerator : MonoBehaviour
         float offset = mapSize / 2f;
         player.transform.position = new Vector3(IntStart.x - offset + 0.5f, 1f, IntStart.y - offset + 0.5f);
         destination.transform.position = new Vector3(IntEnd.x - offset + 0.5f, 1f, IntEnd.y - offset + 0.5f);
+
+        // --- NEW FOR VISUALIZATION: שמירת קואורדינטות הגריד האמיתיות של ההתחלה והסיום ---
+        startGridPos = new Vector2Int((int)IntStart.x, (int)IntStart.y);
+        endGridPos = new Vector2Int((int)IntEnd.x, (int)IntEnd.y);
     }
 
     void SpawnPuzzles()
