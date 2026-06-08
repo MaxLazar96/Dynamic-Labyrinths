@@ -38,16 +38,24 @@ public class PlayerMovement : MonoBehaviour
         // Determine if we are running
         float currentSpeed = Input.GetKey(KeyCode.LeftShift) ? runSpeed : walkSpeed;
 
+        // Calculate horizontal movement vector
         Vector3 move = transform.right * x + transform.forward * z;
-        controller.Move(move * currentSpeed * Time.deltaTime);
 
         // --- GRAVITY ---
+        // Reset downward velocity if standing on the ground
         if (controller.isGrounded && velocity.y < 0)
         {
             velocity.y = -2f; 
         }
 
+        // Apply gravity over time
         velocity.y += gravity * Time.deltaTime;
-        controller.Move(velocity * Time.deltaTime);
+
+        // --- THE FIX: Combine both into ONE single movement call ---
+        // We multiply the horizontal move by speed, and add the vertical velocity
+        Vector3 finalMovement = (move * currentSpeed) + velocity;
+        
+        // Move the Character Controller exactly once per frame
+        controller.Move(finalMovement * Time.deltaTime);
     }
 }

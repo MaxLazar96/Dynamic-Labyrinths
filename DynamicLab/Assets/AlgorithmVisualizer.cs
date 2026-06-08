@@ -82,20 +82,12 @@ public class AlgorithmVisualizer : MonoBehaviour
         bool[,] grid = mapGenerator.GetGrid();
         MapGenerator.MapType currentAlg = mapGenerator.currentMapType;
 
-        // ==========================================================
-        // --- NEW: FETCH THE REAL PATH FROM THE ACTUAL SCRIPTS ---
-        // ==========================================================
-        List<Node> realPathNodes = GetRealPathFromScripts(currentAlg, start, end);
-        // ==========================================================
+        Color scanColor = new Color(0.2f, 0.6f, 1f); 
+        if (currentAlg == MapGenerator.MapType.Caverns_LPA) scanColor = new Color(0.2f, 0.8f, 0.4f); 
+        if (currentAlg == MapGenerator.MapType.Arena_DLite) scanColor = new Color(0.6f, 0.3f, 0.9f); 
 
-        // 1. הגדרת התנהגות ויזואלית וצבעים ייחודיים לכל אלגוריתם
-        Color scanColor = new Color(0.2f, 0.6f, 1f); // ARA* = כחול תכלת
-        if (currentAlg == MapGenerator.MapType.Caverns_LPA) scanColor = new Color(0.2f, 0.8f, 0.4f); // LPA* = ירוק סייבר
-        if (currentAlg == MapGenerator.MapType.Arena_DLite || currentAlg == MapGenerator.MapType.RandomScatter) scanColor = new Color(0.6f, 0.3f, 0.9f); // D* Lite = סגול פסטל
-
-        // 2. קביעת שורש החיפוש: D* Lite סורק מהסוף להתחלה (Backward Search)
-        Vector2Int root = (currentAlg == MapGenerator.MapType.Arena_DLite || currentAlg == MapGenerator.MapType.RandomScatter) ? end : start;
-        Vector2Int target = (currentAlg == MapGenerator.MapType.Arena_DLite || currentAlg == MapGenerator.MapType.RandomScatter) ? start : end;
+        Vector2Int root = (currentAlg == MapGenerator.MapType.Arena_DLite) ? end : start;
+        Vector2Int target = (currentAlg == MapGenerator.MapType.Arena_DLite) ? start : end;
 
         List<Vector2Int> openSet = new List<Vector2Int>();
         Dictionary<Vector2Int, Vector2Int> cameFrom = new Dictionary<Vector2Int, Vector2Int>();
@@ -105,9 +97,8 @@ public class AlgorithmVisualizer : MonoBehaviour
         cameFrom[root] = root;
         gCost[root] = 0;
 
-        // 3. הגדרת כיוונים 
         List<Vector2Int> directions = new List<Vector2Int> { Vector2Int.up, Vector2Int.down, Vector2Int.left, Vector2Int.right };
-        if (currentAlg == MapGenerator.MapType.Caverns_LPA || currentAlg == MapGenerator.MapType.Arena_DLite || currentAlg == MapGenerator.MapType.RandomScatter)
+        if (currentAlg == MapGenerator.MapType.Caverns_LPA || currentAlg == MapGenerator.MapType.Arena_DLite)
         {
             directions.Add(new Vector2Int(1, 1)); directions.Add(new Vector2Int(1, -1));
             directions.Add(new Vector2Int(-1, 1)); directions.Add(new Vector2Int(-1, -1));
@@ -115,8 +106,8 @@ public class AlgorithmVisualizer : MonoBehaviour
 
         bool pathFound = false;
         int stepCount = 0;
+        Vector2Int finalNodeReached = root; // THE FIX: Track the exact node we stop on!
 
-        // לולאת החיפוש המייצרת את "ענן המחשבה" (Simulated Thinking Process)
         while (openSet.Count > 0 && stepCount < 6000)
         {
             int bestIndex = 0;
@@ -143,6 +134,7 @@ public class AlgorithmVisualizer : MonoBehaviour
             if (current == target || Vector2Int.Distance(current, target) <= 1.2f)
             {
                 pathFound = true;
+                finalNodeReached = current; // Save where we stopped
                 break;
             }
 
@@ -164,11 +156,7 @@ public class AlgorithmVisualizer : MonoBehaviour
                             if (!openSet.Contains(next))
                             {
                                 openSet.Add(next);
-
-                                if (next != start && next != end)
-                                {
-                                    mapTexture.SetPixel(next.x, next.y, scanColor);
-                                }
+                                if (next != start && next != end) mapTexture.SetPixel(next.x, next.y, scanColor);
                             }
                         }
                     }
@@ -186,62 +174,40 @@ public class AlgorithmVisualizer : MonoBehaviour
 
         mapTexture.Apply();
 
-        // ==========================================================
-        // --- שלב שני: בניית קו הזהב על בסיס האלגוריתם האמיתי ---
-        // ==========================================================
-        List<Vector2Int> pathToDraw = new List<Vector2Int>();
+        // THE FIX: Draw the golden line starting EXACTLY from the final node reached
+        if (pathFound)
+        {
+            List<Vector2Int> path = new List<Vector2Int>();
+            Vector2Int trace = finalNodeReached; 
 
-        if (realPathNodes != null && realPathNodes.Count > 0)
-        {
-            // אם האלגוריתם האמיתי החזיר נתיב, נמיר אותו לקואורדינטות גריד ונשתמש בו!
-            foreach (Node n in realPathNodes)
+            path.Add(target); // Ensure the exact target gets colored
+
+            while (trace != root)
             {
-                Vector2Int gridPos = GetGridPosFromNode(n);
-                if (gridPos != start && gridPos != end) // מדלגים על הקצוות כדי שלא ידרסו את הירוק והאדום
+                if (cameFrom.ContainsKey(trace))
                 {
-                    pathToDraw.Add(gridPos);
-                }
-            }
-        }
-        else if (pathFound) 
-        {
-            // חלופת גיבוי (Fallback) למקרה שהסקריפטים האמיתיים כשלו או חסרים
-            Vector2Int trace = target;
-            if (cameFrom.ContainsKey(target))
-            {
-                while (trace != root)
-                {
-                    if (cameFrom.ContainsKey(trace))
+                    trace = cameFrom[trace];
+                    if (trace != start && trace != end)
                     {
-                        trace = cameFrom[trace];
-                        if (trace != start && trace != end)
-                        {
-                            if (currentAlg == MapGenerator.MapType.Arena_DLite || currentAlg == MapGenerator.MapType.RandomScatter)
-                                pathToDraw.Add(trace);
-                            else
-                                pathToDraw.Insert(0, trace);
-                        }
+                        if (currentAlg == MapGenerator.MapType.Arena_DLite) path.Add(trace);
+                        else path.Insert(0, trace);
                     }
-                    else break;
                 }
+                else break;
             }
-        }
 
-        // שרטוט האנימציה של קו הזהב הסופי
-        for (int i = 0; i < pathToDraw.Count; i++)
-        {
-            mapTexture.SetPixel(pathToDraw[i].x, pathToDraw[i].y, pathColor);
-            
-            // עיבוי הקו שייראה טוב יותר
-            if (pathToDraw[i].x + 1 < mapSize) mapTexture.SetPixel(pathToDraw[i].x + 1, pathToDraw[i].y, pathColor);
-            if (pathToDraw[i].y + 1 < mapSize) mapTexture.SetPixel(pathToDraw[i].x, pathToDraw[i].y + 1, pathColor);
+            for (int i = 0; i < path.Count; i++)
+            {
+                mapTexture.SetPixel(path[i].x, path[i].y, pathColor);
+                if (path[i].x + 1 < mapSize) mapTexture.SetPixel(path[i].x + 1, path[i].y, pathColor);
+                if (path[i].y + 1 < mapSize) mapTexture.SetPixel(path[i].x, path[i].y + 1, pathColor);
 
-            mapTexture.Apply();
-            displayImage.texture = mapTexture;
-            yield return new WaitForSecondsRealtime(delayPathBuild);
+                mapTexture.Apply();
+                displayImage.texture = mapTexture;
+                yield return new WaitForSecondsRealtime(delayPathBuild);
+            }
         }
         
-        // וידוא שנקודות הקצה יישארו בולטות מעל הכל בסיום הציור
         DrawLargePoint(start, startColor);
         DrawLargePoint(end, endColor);
         mapTexture.Apply();
