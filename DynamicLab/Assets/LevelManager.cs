@@ -3,13 +3,14 @@ using UnityEngine.SceneManagement;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics; // הוספנו כדי לאפשר את השימוש בשעון העצר (Stopwatch)
 
 public class LevelManager : MonoBehaviour
 {
     public static LevelManager instance;
 
     [Header("Cameras")]
-    public Camera mainCamera; // Kept just the main camera
+    public Camera mainCamera; 
 
     [Header("In-Game UI")]
     public TextMeshProUGUI scoreText;
@@ -38,8 +39,11 @@ public class LevelManager : MonoBehaviour
     private int collectedPuzzles = 0;
     private bool isPaused = false; 
     private string usedAlgorithm = "None"; 
-    
     private bool isHintSystemActive = false; 
+
+    // --- משתנים חדשים למדידת זמנים ---
+    private float playerStartTime;
+    private double algorithmComputationTimeMs = 0;
 
     void Awake()
     {
@@ -65,6 +69,10 @@ public class LevelManager : MonoBehaviour
         collectedPuzzles = 0;
         puzzlesTowardsNextHint = 0;
         isHintSystemActive = false;
+        
+        // התחלת שעון העצר של השחקן ברגע שהשלב מתחיל
+        playerStartTime = Time.time; 
+
         UpdateScoreUI();
         
         if (levelEndWindow != null) levelEndWindow.SetActive(false);
@@ -99,8 +107,8 @@ public class LevelManager : MonoBehaviour
         isPaused = false;
         if (pauseMenuWindow != null) pauseMenuWindow.SetActive(false);
         Time.timeScale = 1f;
-        Cursor.lockState = CursorLockMode.None; 
-        Cursor.visible = true; 
+        Cursor.lockState = CursorLockMode.Locked; // עדיף לנעול את העכבר בחזרה כשחוזרים לשחק
+        Cursor.visible = false; 
     }
 
     public void ReturnToMainMenu()
@@ -149,27 +157,51 @@ public class LevelManager : MonoBehaviour
         if (generator == null) return null;
 
         List<Node> path = null;
+        Stopwatch sw = new Stopwatch(); // הפעלת שעון העצר של המעבד
+
         switch (generator.currentMapType)
         {
             case MapGenerator.MapType.Maze_ARA:
                 usedAlgorithm = "ARA*";
                 ARAStarPathfinder ara = FindFirstObjectByType<ARAStarPathfinder>();
-                if (ara != null) path = ara.FindPath(startPos, endPos);
+                if (ara != null)
+                {
+                    sw.Start();
+                    path = ara.FindPath(startPos, endPos);
+                    sw.Stop();
+                }
                 break;
                 
             case MapGenerator.MapType.Caverns_LPA:
                 usedAlgorithm = "LPA*";
                 LPAStarPathfinder lpa = FindFirstObjectByType<LPAStarPathfinder>();
-                if (lpa != null) path = lpa.FindPath(startPos, endPos);
+                if (lpa != null)
+                {
+                    sw.Start();
+                    path = lpa.FindPath(startPos, endPos);
+                    sw.Stop();
+                }
                 break;
 
             case MapGenerator.MapType.Arena_DLite:
             case MapGenerator.MapType.RandomScatter:
                 usedAlgorithm = "D* Lite";
                 DStarLitePathfinder dlite = FindFirstObjectByType<DStarLitePathfinder>();
-                if (dlite != null) path = dlite.FindPath(startPos, endPos);
+                if (dlite != null)
+                {
+                    sw.Start();
+                    path = dlite.FindPath(startPos, endPos);
+                    sw.Stop();
+                }
                 break;
         }
+
+        // שמירת זמן הריצה שנמדד
+        if (path != null)
+        {
+            algorithmComputationTimeMs = sw.Elapsed.TotalMilliseconds;
+        }
+
         return path;
     }
 
@@ -253,10 +285,25 @@ public class LevelManager : MonoBehaviour
         ClearBreadcrumbs(); 
         if (algorithmHintText != null) algorithmHintText.text = ""; 
 
+        // 1. חישוב זמן השחקן
+        float playerFinishTime = Time.time - playerStartTime;
+        int minutes = Mathf.FloorToInt(playerFinishTime / 60f);
+        int seconds = Mathf.FloorToInt(playerFinishTime % 60);
+        string formattedTime = string.Format("{0:00}:{1:00}", minutes, seconds);
+
+        // 2. חישוב זמן האלגוריתם בשקט (מבטיח שיש לנו מדידה עדכנית מההתחלה ועד לסיום גם אם השחקן לא השתמש ברמזים)
+        CalculateAlgorithmPath(player.transform.position, destination.transform.position);
+
         if (levelEndWindow != null) levelEndWindow.SetActive(true);
+        
+        // 3. הצגת כל הנתונים בטקסט הסיום הקיים
         if (runStatsText != null)
         {
-            runStatsText.text = $"Labyrinth Conquered!\n\nPuzzles: {collectedPuzzles}\nAlgorithm: {usedAlgorithm}";
+            runStatsText.text = $"Labyrinth Conquered!\n\n" +
+                                $"Puzzles Collected: {collectedPuzzles}\n" +
+                                $"Optimal Algorithm: {usedAlgorithm}\n" + // <--- הנה השינוי שביקשת
+                                $"Your Run Time: {formattedTime}\n" +
+                                $"Algorithm Run Time: {algorithmComputationTimeMs:F2} ms";
         }
 
         Time.timeScale = 0f;
