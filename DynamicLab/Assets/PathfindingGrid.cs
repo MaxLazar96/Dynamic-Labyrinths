@@ -3,24 +3,41 @@ using System.Collections.Generic;
 
 public class PathfindingGrid : MonoBehaviour 
 {
-    public Vector2 gridWorldSize = new Vector2(100, 100);
     public float nodeRadius = 0.5f;
     Node[,] grid;
+    
+    // We will store the dynamic size and offset here
+    int mapSize;
+    float offset;
 
     public void CreateGrid() 
     {
-        int gridSizeX = Mathf.RoundToInt(gridWorldSize.x / (nodeRadius * 2));
-        int gridSizeY = Mathf.RoundToInt(gridWorldSize.y / (nodeRadius * 2));
-        grid = new Node[gridSizeX, gridSizeY];
-
+        // 1. Ask the MapGenerator for the blueprint AND the size!
         MapGenerator mapGen = FindFirstObjectByType<MapGenerator>();
-        bool[,] logicalGrid = mapGen != null ? mapGen.GetGrid() : null;
+        bool[,] logicalGrid = null;
 
-        for (int x = 0; x < gridSizeX; x++) 
+        if (mapGen != null) 
         {
-            for (int y = 0; y < gridSizeY; y++) 
+            logicalGrid = mapGen.GetGrid();
+            mapSize = mapGen.mapSize; // Instantly adapt to the Inspector setting
+        }
+        else 
+        {
+            mapSize = 100; // Failsafe
+        }
+
+        // Calculate the center offset dynamically (always half the map size)
+        offset = mapSize / 2f;
+
+        // Create the mathematical grid exactly matching the map size
+        grid = new Node[mapSize, mapSize];
+
+        for (int x = 0; x < mapSize; x++) 
+        {
+            for (int y = 0; y < mapSize; y++) 
             {
-                Vector3 worldPoint = transform.position + Vector3.right * (x * 1f - 50f + 0.5f) + Vector3.forward * (y * 1f - 50f + 0.5f);
+                // NO MORE 50f: We use our dynamic 'offset' instead
+                Vector3 worldPoint = transform.position + Vector3.right * (x * 1f - offset + 0.5f) + Vector3.forward * (y * 1f - offset + 0.5f);
                 
                 bool walkable = true;
                 if (logicalGrid != null && x < logicalGrid.GetLength(0) && y < logicalGrid.GetLength(1)) 
@@ -41,9 +58,12 @@ public class PathfindingGrid : MonoBehaviour
             for (int y = -1; y <= 1; y++) 
             {
                 if (x == 0 && y == 0) continue;
+                
                 int checkX = node.gridX + x;
                 int checkY = node.gridY + y;
-                if (checkX >= 0 && checkX < 100 && checkY >= 0 && checkY < 100) 
+                
+                // NO MORE 100: We check against the dynamic 'mapSize'
+                if (checkX >= 0 && checkX < mapSize && checkY >= 0 && checkY < mapSize) 
                     neighbors.Add(grid[checkX, checkY]);
             }
         }
@@ -52,13 +72,13 @@ public class PathfindingGrid : MonoBehaviour
 
     public Node NodeFromWorldPoint(Vector3 worldPosition) 
     {
-        // THE FIX: Perfect World-to-Grid mathematical mapping. No more 1% coordinate drift!
-        int x = Mathf.FloorToInt(worldPosition.x + 50f);
-        int y = Mathf.FloorToInt(worldPosition.z + 50f);
+        // NO MORE 50f: We use our dynamic 'offset' to calculate math
+        int x = Mathf.FloorToInt(worldPosition.x + offset);
+        int y = Mathf.FloorToInt(worldPosition.z + offset);
         
-        // Clamp to prevent out-of-bounds array errors
-        x = Mathf.Clamp(x, 0, Mathf.RoundToInt(gridWorldSize.x) - 1);
-        y = Mathf.Clamp(y, 0, Mathf.RoundToInt(gridWorldSize.y) - 1);
+        // Clamp it safely inside the new dynamic map size
+        x = Mathf.Clamp(x, 0, mapSize - 1);
+        y = Mathf.Clamp(y, 0, mapSize - 1);
         
         return grid[x, y];
     }

@@ -451,6 +451,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 188560845}
+  - component: {fileID: 188560846}
   - component: {fileID: 188560844}
   m_Layer: 0
   m_Name: MapManager
@@ -471,6 +472,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7a07932ddff4275438fd937a95e7e207, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MapGenerator
+  ShowTopMostFoldoutHeaderGroup: 1
   isMainMenu: 1
   randomlySelectMapType: 0
   currentMapType: 3
@@ -486,10 +488,17 @@ MonoBehaviour:
   minDistance: 20
   currentSeed: 0
   useRandomSeed: 1
+  networkedSeed:
+    UpdateTraits:
+      MinSecondsBetweenUpdates: 0
+      MaxSecondsBetweenUpdates: 0
+    m_InternalValue: 0
   puzzlePrefab: {fileID: 0}
   puzzleCount: 200
   botPrefab: {fileID: 0}
   numberOfBots: 15
+  startGridPos: {x: 0, y: 0}
+  endGridPos: {x: 0, y: 0}
 --- !u!4 &188560845
 Transform:
   m_ObjectHideFlags: 0
@@ -505,6 +514,31 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &188560846
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 188560843}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
+  GlobalObjectIdHash: 3830732874
+  InScenePlacedSourceGlobalObjectIdHash: 0
+  DeferredDespawnTick: 0
+  Ownership: 1
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 0
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+  SyncOwnerTransformWhenParented: 1
+  AllowOwnerToParent: 0
 --- !u!1 &594841979
 GameObject:
   m_ObjectHideFlags: 0

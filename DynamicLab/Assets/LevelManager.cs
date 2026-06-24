@@ -4,8 +4,9 @@ using TMPro;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics; // הוספנו כדי לאפשר את השימוש בשעון העצר (Stopwatch)
+using Unity.Netcode;
 
-public class LevelManager : MonoBehaviour
+public class LevelManager : NetworkBehaviour
 {
     public static LevelManager instance;
 
@@ -277,7 +278,7 @@ public class LevelManager : MonoBehaviour
     }
 
     // ==========================================
-    // --- BASIC END LEVEL ---
+    // --- NETWORKED END LEVEL ---
     // ==========================================
     void EndLevel()
     {
@@ -285,43 +286,56 @@ public class LevelManager : MonoBehaviour
         ClearBreadcrumbs(); 
         if (algorithmHintText != null) algorithmHintText.text = ""; 
 
-        // 1. חישוב זמן השחקן
         float playerFinishTime = Time.time - playerStartTime;
         int minutes = Mathf.FloorToInt(playerFinishTime / 60f);
         int seconds = Mathf.FloorToInt(playerFinishTime % 60);
         string formattedTime = string.Format("{0:00}:{1:00}", minutes, seconds);
 
-        // 2. חישוב זמן האלגוריתם בשקט (מבטיח שיש לנו מדידה עדכנית מההתחלה ועד לסיום גם אם השחקן לא השתמש ברמזים)
         CalculateAlgorithmPath(player.transform.position, destination.transform.position);
 
         if (levelEndWindow != null) levelEndWindow.SetActive(true);
         
-        // 3. הצגת כל הנתונים בטקסט הסיום הקיים
         if (runStatsText != null)
         {
             runStatsText.text = $"Labyrinth Conquered!\n\n" +
                                 $"Puzzles Collected: {collectedPuzzles}\n" +
-                                $"Optimal Algorithm: {usedAlgorithm}\n" + // <--- הנה השינוי שביקשת
+                                $"Optimal Algorithm: {usedAlgorithm}\n" +
                                 $"Your Run Time: {formattedTime}\n" +
                                 $"Algorithm Run Time: {algorithmComputationTimeMs:F2} ms";
         }
+
+        // THE FIX: Tell the mobile phone that the game is over!
+        if (IsServer) ShowEndScreenClientRpc();
 
         Time.timeScale = 0f;
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
     }
 
+    [ClientRpc]
+    public void ShowEndScreenClientRpc()
+    {
+        // This forces the phone to show its own End Level screen
+        if (!IsServer && levelEndWindow != null) 
+        {
+            levelEndWindow.SetActive(true);
+        }
+    }
+
     public void ReplayLevel()
     {
         shouldReplaySameSeed = true;
         Time.timeScale = 1f;
-        SceneManager.LoadScene(1); 
+        
+        // THE FIX: Use the NetworkManager to load the scene so the phone stays connected!
+        if (IsServer) NetworkManager.Singleton.SceneManager.LoadScene(SceneManager.GetActiveScene().name, LoadSceneMode.Single);
     }
 
     public void NextMap()
     {
         shouldReplaySameSeed = false;
         Time.timeScale = 1f;
-        SceneManager.LoadScene(1); 
+        
+        if (IsServer) NetworkManager.Singleton.SceneManager.LoadScene(SceneManager.GetActiveScene().name, LoadSceneMode.Single);
     }
 }

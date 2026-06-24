@@ -1,8 +1,11 @@
 using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
+using Unity.Netcode;
+using UnityEngine.EventSystems;
 
-public partial class MapGenerator : MonoBehaviour
+// 2. CHANGE 'MonoBehaviour' to 'NetworkBehaviour'
+public partial class MapGenerator : NetworkBehaviour
 {
     public enum MapType { RandomScatter, Maze_ARA, Caverns_LPA, Arena_DLite }
 
@@ -33,6 +36,9 @@ public partial class MapGenerator : MonoBehaviour
     [Header("Seed System")]
     public int currentSeed;
     public bool useRandomSeed = true;
+    
+    // 3. ADD THIS: The magic variable that syncs over Wi-Fi!
+    public NetworkVariable<int> networkedSeed = new NetworkVariable<int>(0);
 
     [Header("Puzzle Settings")]
     public GameObject puzzlePrefab;
@@ -44,7 +50,7 @@ public partial class MapGenerator : MonoBehaviour
     private List<GameObject> spawnedBots = new List<GameObject>();
 
     private bool[,] grid;
-    private bool[,] decoMap; // THE FIX: A dedicated map just for decorations!
+    private bool[,] decoMap; 
     
     [HideInInspector] public Vector2Int startGridPos;
     [HideInInspector] public Vector2Int endGridPos;
@@ -52,11 +58,52 @@ public partial class MapGenerator : MonoBehaviour
 
     public bool[,] GetGrid() { return grid; }
 
-    IEnumerator Start()
+
+    // ==========================================
+    // THE FIX: MAIN MENU BYPASS
+    // ==========================================
+    void Start()
     {
-        if (useRandomSeed) currentSeed = Random.Range(0, 99999);
-        Random.InitState(currentSeed);
-        Debug.Log("Current Map Seed: " + currentSeed);
+        // If this is the Main Menu, we don't care about networking yet!
+        // Just instantly generate a map for the background camera.
+        if (isMainMenu)
+        {
+            if (useRandomSeed) currentSeed = Random.Range(1000, 99999);
+            Random.InitState(currentSeed);
+
+            if (randomlySelectMapType) currentMapType = (MapType)Random.Range(1, 4);
+
+            switch (currentMapType)
+            {
+                case MapType.RandomScatter: currentBiome = randomScatterBiome; break;
+                case MapType.Maze_ARA: currentBiome = mazeARABiome; break;
+                case MapType.Caverns_LPA: currentBiome = cavernsLPABiome; break;
+                case MapType.Arena_DLite: currentBiome = arenaDLiteBiome; break;
+            }
+
+            StartCoroutine(BuildMapRoutine());
+        }
+    }
+    // 4. REPLACE 'IEnumerator Start()' with 'OnNetworkSpawn()'
+    // This ensures the map waits to generate until the network is officially connected.
+    public override void OnNetworkSpawn()
+    {
+        // If this is the Main Menu, abort! The Start() method already built the map.
+        if (isMainMenu) return;
+        // If this is the PC (Server), generate a random seed and share it to the network!
+        if (IsServer)
+        {
+            if (useRandomSeed) networkedSeed.Value = Random.Range(1000, 99999);
+            else networkedSeed.Value = currentSeed;
+            Debug.Log("Server chose Map Seed: " + networkedSeed.Value);
+        }
+        else // If this is the Phone (Client), log the seed we received!
+        {
+            Debug.Log("Client received Map Seed: " + networkedSeed.Value);
+        }
+
+        // Both devices now initialize their random math using the exact same synced seed
+        Random.InitState(networkedSeed.Value);
 
         if (randomlySelectMapType) currentMapType = (MapType)Random.Range(1, 4);
 
@@ -68,6 +115,13 @@ public partial class MapGenerator : MonoBehaviour
             case MapType.Arena_DLite: currentBiome = arenaDLiteBiome; break;
         }
 
+        // Start the generation process
+        StartCoroutine(BuildMapRoutine());
+    }
+
+    // 5. This is just the second half of your old Start() method, renamed.
+    IEnumerator BuildMapRoutine()
+    {
         GenerateMap();
         ApplyAtmosphere(); 
 
@@ -83,6 +137,12 @@ public partial class MapGenerator : MonoBehaviour
             {
                 pg.CreateGrid();
                 SpawnBots(pg);
+            }
+
+            // If we are the Mobile Client, switch into 2D God-Mode!
+            if (!IsServer) 
+            {
+                SetupMobileCamera();
             }
         }
     }
@@ -497,5 +557,170 @@ public partial class MapGenerator : MonoBehaviour
         if (sun != null) sun.color = currentBiome.sunColor;
 
         DynamicGI.UpdateEnvironment();
+    }
+
+    // ==========================================
+    // MULTIPLAYER INTERACTION SYSTEM
+    // ==========================================
+
+    void SetupMobileCamera()
+    {
+        // THE FIX: Find literally every camera in the scene and turn them ALL off.
+        Camera[] allCameras = FindObjectsByType<Camera>(FindObjectsSortMode.None);
+        foreach (Camera c in allCameras)
+        {
+            c.gameObject.SetActive(false);
+        }
+
+        GameObject mobileCamObj = new GameObject("MobileGodCamera");
+        mobileCamObj.tag = "MainCamera"; 
+        Camera mobileCam = mobileCamObj.AddComponent<Camera>();
+
+        mobileCam.orthographic = true;
+        mobileCam.orthographicSize = (mapSize / 2f) + 2f;
+        
+        mobileCam.transform.position = new Vector3(0f, 100f, 0f);
+        mobileCam.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+
+        mobileCam.clearFlags = CameraClearFlags.SolidColor;
+        mobileCam.backgroundColor = new Color(0.1f, 0.1f, 0.1f);
+
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+    }
+
+    // Add this variable right above Update() to remember where the user started dragging
+    private Vector3 dragOrigin;
+    private Vector3 clickScreenPosition;
+    private bool isDragging = false;
+    private float dragThreshold = 10f; // How many pixels the mouse must move to be considered a "drag"
+
+    void Update()
+    {
+        if (!IsServer) 
+        {
+            if (Cursor.lockState != CursorLockMode.None || !Cursor.visible)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+            }
+
+            Camera cam = Camera.main;
+            if (cam == null) return;
+
+            // 1. WASD / ARROW KEY PANNING (PC Testing)
+            float moveX = Input.GetAxis("Horizontal");
+            float moveZ = Input.GetAxis("Vertical");
+            if (moveX != 0 || moveZ != 0) 
+            {
+                cam.transform.position += new Vector3(moveX, 0, moveZ) * 30f * Time.deltaTime;
+            }
+
+            // 2. PC SCROLL WHEEL ZOOM
+            float scroll = Input.GetAxis("Mouse ScrollWheel");
+            if (scroll != 0.0f)
+            {
+                cam.orthographicSize -= scroll * 15f;
+            }
+
+            // 3. MOBILE PINCH-TO-ZOOM
+            if (Input.touchCount == 2)
+            {
+                Touch touchZero = Input.GetTouch(0);
+                Touch touchOne = Input.GetTouch(1);
+
+                Vector2 touchZeroPrevPos = touchZero.position - touchZero.deltaPosition;
+                Vector2 touchOnePrevPos = touchOne.position - touchOne.deltaPosition;
+
+                float prevMagnitude = (touchZeroPrevPos - touchOnePrevPos).magnitude;
+                float currentMagnitude = (touchZero.position - touchOne.position).magnitude;
+                float difference = currentMagnitude - prevMagnitude;
+
+                cam.orthographicSize -= difference * 0.05f; 
+            }
+            
+            // Clamp Zoom so they can't break the camera
+            cam.orthographicSize = Mathf.Clamp(cam.orthographicSize, 5f, (mapSize / 2f) + 5f);
+
+            // 4. PANNING & BUILDING (Only runs if they aren't pinching to zoom)
+            if (Input.touchCount < 2)
+            {
+                if (Input.GetMouseButtonDown(0)) 
+                {
+                    if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject()) return; 
+
+                    clickScreenPosition = Input.mousePosition;
+                    dragOrigin = cam.ScreenToWorldPoint(Input.mousePosition);
+                    isDragging = false;
+                }
+
+                if (Input.GetMouseButton(0))
+                {
+                    if (Vector3.Distance(clickScreenPosition, Input.mousePosition) > dragThreshold)
+                    {
+                        isDragging = true;
+                        Vector3 difference = dragOrigin - cam.ScreenToWorldPoint(Input.mousePosition);
+                        cam.transform.position += new Vector3(difference.x, 0, difference.z);
+                    }
+                }
+
+                if (Input.GetMouseButtonUp(0)) 
+                {
+                    if (!isDragging)
+                    {
+                        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+                        if (Physics.Raycast(ray, out RaycastHit hit))
+                        {
+                            float offset = mapSize / 2f;
+                            int x = Mathf.FloorToInt(hit.point.x + offset);
+                            int z = Mathf.FloorToInt(hit.point.z + offset);
+
+                            if (x >= 0 && x < mapSize && z >= 0 && z < mapSize)
+                            {
+                                RequestPlaceWallServerRpc(x, z);
+                            }
+                        }
+                    }
+                    isDragging = false;
+                }
+            }
+
+            // 5. CAMERA BOUNDARY LOCK
+            // Prevents the player from dragging the map off the screen!
+            float boundaryLimit = mapSize / 2f;
+            Vector3 clampedPos = cam.transform.position;
+            clampedPos.x = Mathf.Clamp(clampedPos.x, -boundaryLimit, boundaryLimit);
+            clampedPos.z = Mathf.Clamp(clampedPos.z, -boundaryLimit, boundaryLimit);
+            cam.transform.position = clampedPos;
+        }
+    }
+
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    public void RequestPlaceWallServerRpc(int x, int z)
+    {
+        // The PC verifies if the move is legal
+        if (!grid[x, z] && !decoMap[x, z]) 
+        {
+            ExecutePlaceWallClientRpc(x, z);
+        }
+    }
+
+    [Rpc(SendTo.Everyone)]
+    public void ExecutePlaceWallClientRpc(int x, int z)
+    {
+        // 1. Update the master math grid
+        grid[x, z] = true;
+
+        // 2. Spawn the standard 3D visual wall
+        float offset = mapSize / 2f;
+        Vector3 spawnPos = new Vector3(x - offset + 0.5f, 0f, z - offset + 0.5f);
+        Instantiate(wallPrefab, spawnPos, Quaternion.identity, transform);
+
+        // 3. Force the Pathfinding algorithms to recognize the new wall!
+        PathfindingGrid pg = FindFirstObjectByType<PathfindingGrid>();
+        if (pg != null) 
+        {
+            pg.CreateGrid(); 
+        }
     }
 }
