@@ -1,5 +1,4 @@
 
- Overview
 Dynamic Labyrinths is a complete multiplayer educational game designed to teach and visualize search algorithms within a dynamic environment. The project showcases complex game logic, full system architecture from the ground up, and the integration of artificial intelligence.
 
  Tech Stack
